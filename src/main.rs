@@ -1,6 +1,7 @@
 mod dialog;
 
 use clap::{Parser, Subcommand};
+use jlrs::convert::to_symbol::ToSymbol;
 use jlrs::prelude::*;
 
 #[derive(Parser)]
@@ -15,132 +16,87 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     Play,
-    Dialog,
     Price,
-    Dowhat,
+    Example,
 }
 
 fn main() {
     let args = Cli::parse();
 
+    // start runtime if needed
+    let handle = if matches!(args.command, Commands::Play | Commands::Price) {
+        let handle = Builder::new().start_local().expect("cannot init Julia");
+
+        unsafe {
+            handle
+                .include("julia/Motoro/src/Motoro.jl")
+                .expect("Failed to load Motoro.jl");
+        }
+
+        Some(handle)
+    } else {
+        None
+    };
+
     match args.command {
-        Commands::Play | Commands::Price => {
-            // this just has to be created once so do the thing
-            let handle = Builder::new().start_local().expect("cannot init Julia");
+        Commands::Play => handle.unwrap().local_scope::<_, 3>(|mut frame| {
+            let motoro = Module::main(&frame)
+                .submodule(&mut frame, "Motoro")
+                .unwrap();
+
+            let game_func = motoro.global(&mut frame, "game").expect("game not found");
 
             unsafe {
-                handle
-                    .include("julia/Motoro/src/Motoro.jl")
-                    .expect("Failed to load Motoro.jl");
+                game_func.call(&mut frame, []).expect("exception in game()");
             }
+        }),
+        Commands::Price => handle.unwrap().local_scope::<_, 11>(|mut frame| {
+            let inputs = dialog::get_option_inputs();
 
-            match args.command {
-                Commands::Play => handle.local_scope::<_, 3>(|mut frame| {
-                    let game_func = Module::main(&frame)
-                        .submodule(&mut frame, "Motoro")
-                        .expect("Motoro not found")
-                        .global(&mut frame, "game")
-                        .expect("game not found");
+            // converts data from Rust to Julia
+            // I believe there is a reflect function so I can imrove this
+            let strike = Value::new(&mut frame, inputs.strike);
+            let expiry = Value::new(&mut frame, inputs.expiry);
+            let binomial = Value::new(&mut frame, inputs.binomial);
+            let spot = Value::new(&mut frame, inputs.spot);
+            let rate = Value::new(&mut frame, inputs.rate);
+            let vol = Value::new(&mut frame, inputs.vol);
+            let div = Value::new(&mut frame, inputs.div);
 
-                    unsafe {
-                        game_func.call(&mut frame, []).expect("exception in game()");
-                    }
-                }),
-                Commands::Price => handle.local_scope::<_, 19>(|mut frame| {
-                    let inputs = dialog::get_option_inputs();
-                    // let option_type = JuliaString::from(inputs.option_type);
-                    // converts data from Rust to Julia
-                    let strike = Value::new(&mut frame, inputs.strike);
-                    let expiry = Value::new(&mut frame, inputs.expiry);
-                    let binomial = Value::new(&mut frame, inputs.binomial);
-                    let spot = Value::new(&mut frame, inputs.spot);
-                    let rate = Value::new(&mut frame, inputs.rate);
-                    let vol = Value::new(&mut frame, inputs.vol);
-                    let div = Value::new(&mut frame, inputs.div);
+            let option = call_julia(&mut frame, &inputs.option_type, &[strike, expiry]).unwrap();
+            let engine = call_julia(&mut frame, "Binomial", &[binomial]).unwrap();
+            let data = call_julia(&mut frame, "MarketData", &[spot, rate, vol, div]).unwrap();
+            let result = call_julia(&mut frame, "price", &[option, engine, data]).unwrap();
 
-                    let option = unsafe {
-                        Module::main(&frame)
-                            .submodule(&mut frame, "Motoro")
-                            .expect("Motoro not found")
-                            .global(&mut frame, inputs.option_type) // this gets the custome type
-                            .unwrap()
-                            .call(&mut frame, [strike, expiry]) // this instantiates the custom type, the one unsafe part
-                            .expect("cannot call constructor of CustomType")
-                    };
+            let price = result.unbox::<f64>().expect("price did not return Float64");
 
-                    let engine = unsafe {
-                        Module::main(&frame)
-                            .submodule(&mut frame, "Motoro")
-                            .expect("Motoro not found")
-                            .global(&mut frame, "Binomial")
-                            .unwrap()
-                            .call(&mut frame, [binomial])
-                            .expect("cannot call constructor of CustomType")
-                    };
-
-                    let data = unsafe {
-                        Module::main(&frame)
-                            .submodule(&mut frame, "Motoro")
-                            .expect("Motoro not found")
-                            .global(&mut frame, "MarketData")
-                            .unwrap()
-                            .call(&mut frame, [spot, rate, vol, div])
-                            .expect("cannot call constructor of CustomType")
-                    };
-
-                    let price_func = Module::main(&frame)
-                        .submodule(&mut frame, "Motoro")
-                        .expect("Motoro not found")
-                        .global(&mut frame, "price")
-                        .expect("price not found");
-
-                    let result = unsafe {
-                        price_func
-                            .call(&mut frame, [option, engine, data])
-                            .expect("exception in price()")
-                    };
-
-                    let price = result.unbox::<f64>().expect("price did not return Float64");
-
-                    println!("\nResult: {price}");
-                }),
-                _ => {}
-            }
-        }
-        Commands::Dialog => dialog::example_thing(),
-        _ => println!("Not implemented yet"),
+            println!("\nResult: {price}");
+        }),
+        Commands::Example => dialog::example_thing(),
     }
 
     // println!("two: {:?}", args.two);
     // println!("one: {:?}", args.one);
 }
 
-// unsafe fn motoro_type<N: ToSymbol>(
-//     frame: LocalGcFrame<'_, 19>,
-//     name: N,
-//     args: [Value],
-// ) -> Value<'_, '_> {
-//     Module::main(frame)
-//         .submodule(frame, "Motoro")
-//         .expect("Motoro not found")
-//         .global(frame, name)
-//         .unwrap()
-//         .call(frame, args)
-// }
+// I am proud of this
+fn call_julia<'target, Tgt, N>(
+    target: Tgt,
+    name: N,
+    args: &[Value<'_, 'static>],
+) -> ValueResult<'target, 'static, Tgt>
+where
+    Tgt: Target<'target>,
+    N: ToSymbol,
+{
+    target.with_local_scope::<_, 2>(|target, mut frame| {
+        let func = Module::main(&frame)
+            .submodule(&mut frame, "Motoro")
+            .unwrap()
+            .global(&mut frame, name)
+            .expect("item not found in Main");
 
-// Call a constructor in Motoro submodule with any number of arguments
-// unsafe fn motoro_type<'a>(
-//     frame: &mut LocalFrame<'a>,
-//     name: &str,
-//     args: &[Value<'a, 'a>],
-// ) -> Value<'a, 'a> {
-//     let module = Module::main(frame)
-//         .submodule(frame, "Motoro")
-//         .expect("Motoro not found");
-
-//     let constructor = module.global(frame, name).expect("constructor not found");
-
-//     constructor
-//         .call(frame, args)
-//         .expect("cannot call constructor of CustomType")
-// }
+        // call/instantiate
+        unsafe { func.call(target, args) }
+    })
+}
