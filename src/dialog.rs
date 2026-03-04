@@ -1,3 +1,4 @@
+use crate::price::{Binomial, EuropeanOption, MarketData, OptionContract, OptionType, Priceable};
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 
 pub struct UserInputs {
@@ -9,6 +10,50 @@ pub struct UserInputs {
     pub rate: f64,
     pub vol: f64,
     pub div: f64,
+}
+
+pub fn price_option_rust() {
+    let selections = &["EuropeanCall", "EurpoeanPut"];
+    let _selection = Select::with_theme(&ColorfulTheme::default()) // fix this later now we are assuming call, make it so we can parse see below
+        .with_prompt("Pick an option")
+        .default(0)
+        .items(&selections[..])
+        .interact()
+        .unwrap();
+    let strike = float_input("Enter the strike");
+    let expiry = float_input("Enter the expiry");
+
+    println!("\nBinomial");
+    let steps = float_input("Enter the binomial number");
+
+    println!("\nMarket Data");
+    let spot = float_input("Enter spot");
+    let rate = float_input("Enter rate");
+    let vol = float_input("Enter vol");
+    let div = float_input("Enter div");
+
+    // option_type: selections[selection].parse() // impl the thing so that this works
+    let option = EuropeanOption {
+        contract: OptionContract {
+            strike,
+            expiry,
+            option_type: OptionType::Call,
+        },
+    };
+
+    let b = Binomial {
+        steps: steps as usize,
+    };
+
+    let data = MarketData {
+        spot,
+        rate,
+        vol,
+        div,
+    };
+
+    let result = option.price(&b, &data);
+    println!("\nThe result is {result}");
 }
 
 pub fn get_option_inputs() -> UserInputs {

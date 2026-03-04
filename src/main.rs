@@ -1,4 +1,5 @@
 mod dialog;
+mod price;
 
 use clap::{Parser, Subcommand};
 use jlrs::convert::to_symbol::ToSymbol;
@@ -17,6 +18,7 @@ struct Cli {
 enum Commands {
     Play,
     Price,
+    RustPrice,
     Example,
 }
 
@@ -73,6 +75,7 @@ fn main() {
             println!("\nResult: {price}");
         }),
         Commands::Example => dialog::example_thing(),
+        Commands::RustPrice => dialog::price_option_rust(),
     }
 }
 
