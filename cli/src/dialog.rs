@@ -1,16 +1,8 @@
+use std::fmt::Debug;
+use std::str::FromStr;
+
 use crate::price::{Binomial, EuropeanOption, MarketData, OptionContract, OptionType, Priceable};
 use dialoguer::{Input, Select, theme::ColorfulTheme};
-
-pub struct UserInputs {
-    pub option_type: String,
-    pub strike: f64,
-    pub expiry: f64,
-    pub binomial: f64,
-    pub spot: f64,
-    pub rate: f64,
-    pub vol: f64,
-    pub div: f64,
-}
 
 pub fn price_option_rust() {
     let selections = &["EuropeanCall", "EurpoeanPut"];
@@ -20,19 +12,20 @@ pub fn price_option_rust() {
         .items(&selections[..])
         .interact()
         .unwrap();
-    let strike = float_input("Enter the strike");
-    let expiry = float_input("Enter the expiry");
+    let strike: f64 = dialog_input("Enter the strike");
+    let expiry: f64 = dialog_input("Enter the expiry");
 
     println!("\nBinomial");
-    let steps = float_input("Enter the binomial number");
+    let steps: i32 = dialog_input("Enter the binomial number");
 
     println!("\nMarket Data");
-    let spot = float_input("Enter spot");
-    let rate = float_input("Enter rate");
-    let vol = float_input("Enter vol");
-    let div = float_input("Enter div");
+    let spot: f64 = dialog_input("Enter spot");
+    let rate: f64 = dialog_input("Enter rate");
+    let vol: f64 = dialog_input("Enter vol");
+    let div: f64 = dialog_input("Enter div");
 
     // option_type: selections[selection].parse() // impl the thing so that this works
+    // right now ITS ONLY doing european option
     let option = EuropeanOption {
         contract: OptionContract {
             strike,
@@ -56,57 +49,27 @@ pub fn price_option_rust() {
     println!("\nThe result is {result}");
 }
 
-pub fn get_option_inputs() -> UserInputs {
-    let selections = &["EuropeanCall", "EurpoeanPut"];
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Pick an option")
-        .default(0)
-        .items(&selections[..])
-        .interact()
-        .unwrap();
-    let strike = float_input("Enter the strike");
-    let expiry = float_input("Enter the expiry");
-
-    println!("\nBinomial");
-    let binomial = float_input("Enter the binomial number");
-
-    println!("\nMarket Data");
-    let spot = float_input("Enter spot");
-    let rate = float_input("Enter rate");
-    let vol = float_input("Enter vol");
-    let div = float_input("Enter div");
-
-    UserInputs {
-        option_type: selections[selection].to_string(),
-        strike,
-        expiry,
-        binomial,
-        spot,
-        rate,
-        vol,
-        div,
-    }
-}
-
-fn float_input<T>(prompt: T) -> f64
+fn dialog_input<T, S>(prompt: S) -> T
 where
-    T: Into<String>,
+    S: Into<String>,
+    T: FromStr,
+    T::Err: Debug,
 {
     Input::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt)
         .validate_with(|input: &String| -> Result<(), &str> {
-            match input.parse::<f64>() {
+            match input.parse::<T>() {
                 Ok(_) => Ok(()),
-                Err(_) => Err("You must enter an f64"),
+                Err(_) => Err("You must enter the correct thing"),
             }
         })
         .interact_text()
         .unwrap()
-        .parse()
+        .parse::<T>()
         .unwrap()
 }
 
-pub fn example_thing() {
+pub fn example_dialog() {
     let selections = &[
         "Ice Cream",
         "Vanilla Cupcake",

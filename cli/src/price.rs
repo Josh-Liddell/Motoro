@@ -7,7 +7,6 @@ pub struct OptionContract {
     pub option_type: OptionType,
 }
 
-#[derive(Copy, Clone)]
 pub enum OptionType {
     Call,
     Put,
@@ -84,5 +83,23 @@ impl Priceable for EuropeanOption {
 // impl Priceable for AmericanOption {
 //     fn price(&self, engine: &Binomial, data: &MarketData) -> f64 {
 //         todo!();
+//         let OptionContract { expiry, .. } = self.contract;
+//         let MarketData {
+//             spot,
+//             rate,
+//             vol,
+//             div,
+//         } = data;
+//         let steps = engine.steps;
+
+//         let dt: f64 = expiry / steps as f64;
+//         let u = ((rate - div) * dt + vol * dt.sqrt()).exp();
+//         let d = ((rate - div) * dt - vol * dt.sqrt()).exp();
+//         let pu = (((rate - div) * dt).exp() - d) / (u - d);
+//         let pd = 1.0 - pu;
+//         let disc = (-rate * dt).exp();
+
+//         // matrix here...
+
 //     }
 // }
